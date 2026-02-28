@@ -2,15 +2,12 @@ import type { MatrixBreakdown } from '@/types'
 import { CategoryRow } from './CategoryRow'
 
 const CATEGORY_LABELS: { key: keyof MatrixBreakdown; label: string }[] = [
-    { key: 'tenth_pct', label: '10th Board %' },
-    { key: 'twelfth_pct', label: '12th Board %' },
-    { key: 'cgpa', label: 'CGPA' },
-    { key: 'github', label: 'GitHub Activity' },
-    { key: 'coding_platform', label: 'Coding Platforms' },
+    { key: 'academics', label: 'Academics (CGPA / Board %)' },
     { key: 'internship', label: 'Internship' },
-    { key: 'certifications', label: 'Certifications' },
     { key: 'projects', label: 'Projects' },
+    { key: 'coding', label: 'Coding Profile' },
     { key: 'hackathons', label: 'Hackathons' },
+    { key: 'certifications', label: 'Certifications' },
 ]
 
 interface MatrixScoreCardProps {
@@ -26,7 +23,7 @@ export function MatrixScoreCard({ matrixScore, matrixBreakdown }: MatrixScoreCar
                     RBU Placement Matrix
                 </h2>
                 <span className="text-2xl font-bold text-slate-900">
-                    {matrixScore}
+                    {matrixScore.toFixed(1)}
                     <span className="text-sm font-normal text-slate-400">/100</span>
                 </span>
             </div>
@@ -36,8 +33,8 @@ export function MatrixScoreCard({ matrixScore, matrixBreakdown }: MatrixScoreCar
                     <CategoryRow
                         key={key}
                         label={label}
-                        earned={matrixBreakdown[key].earned}
-                        max={matrixBreakdown[key].max}
+                        earned={matrixBreakdown[key].score}
+                        max={matrixBreakdown[key].maxScore}
                     />
                 ))}
             </div>

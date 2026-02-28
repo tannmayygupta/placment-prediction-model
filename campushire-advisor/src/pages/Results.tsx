@@ -79,7 +79,7 @@ export default function Results() {
 
                 {/* Right column */}
                 <div className="flex flex-col gap-6">
-                    <ATSScoreCard atsScore={data.atsScore} keywordGaps={data.keywordGaps} />
+                    <ATSScoreCard atsScore={data.atsScore} keywordGaps={data.keywordGaps} resumeSkills={data.resumeSkills} />
                     <ActionPlanCard
                         actions={data.actions}
                         shapContributions={data.shapContributions}

@@ -40,7 +40,7 @@ export default function Register() {
 
                 {registerError && (
                     <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">
-                        {(registerError as Error).message ?? 'Registration failed. Please try again.'}
+                        {(registerError as any).response?.data?.detail || (registerError as Error).message || 'Registration failed. Please try again.'}
                     </p>
                 )}
 

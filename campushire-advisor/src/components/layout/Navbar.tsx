@@ -10,7 +10,7 @@ export function Navbar() {
         <nav className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100">
             <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
                 <Link to="/" className="flex items-center gap-2 font-semibold text-slate-900">
-                    <span className="text-indigo-600 text-xl">🎓</span>
+                    <span className="text-indigo-600 text-xl"></span>
                     <span>CampusHire Advisor</span>
                 </Link>
 

@@ -22,11 +22,37 @@ export interface AcademicProfile {
 }
 
 export interface CodingActivity {
-    lcSubmissions: number
+    // LeetCode
+    lcTotalSolved: number
+    lcEasySolved: number
+    lcMediumSolved: number
+    lcHardSolved: number
+    lcActiveDays: number
+    lcRanking: number
+
+    // GitHub
+    githubRepos: number
+    githubFollowers: number
+    githubStars: number
+
+    // CodeChef
+    ccRating: number
+    ccStars: string
+    ccSolved: number
+    ccGlobalRank: number
+
+    // Codeforces
+    cfRating: number
+    cfMaxRating: number
+    cfRank: string
+    cfSolved: number
+
+    // Legacy fields for backward compat with scorer
+    lcSubmissions: number          // = lcTotalSolved
     hrBadges: number
-    hrMedHardSolved: number
-    githubContributions: number
-    githubCollaborations: number
+    hrMedHardSolved: number        // = lcMediumSolved + lcHardSolved
+    githubContributions: number    // = githubRepos * 10 (proxy)
+    githubCollaborations: number   // = githubFollowers
     githubMonthlyActive: boolean
 }
 
@@ -54,6 +80,39 @@ export interface WizardFormData {
     resumeFile: File | null
 }
 
+// ─── Platform raw data stored in wizard state ─────────────────────────────────
+export interface PlatformRawData {
+    leetcode: {
+        username: string
+        totalSolved: number
+        easySolved: number
+        mediumSolved: number
+        hardSolved: number
+        activeDays: number
+        ranking: number
+    } | null
+    github: {
+        username: string
+        repos: number
+        followers: number
+        stars: number
+    } | null
+    codeforces: {
+        handle: string
+        rating: number
+        maxRating: number
+        rank: string
+        solved: number
+    } | null
+    codechef: {
+        username: string
+        rating: number
+        stars: string
+        solved: number
+        globalRank: number
+    } | null
+}
+
 // ─── Analysis Results ─────────────────────────────────────────────────────────
 export interface ShapContribution {
     feature: string
@@ -69,20 +128,17 @@ export interface Action {
 }
 
 export interface CategoryScore {
-    earned: number
-    max: number
+    score: number
+    maxScore: number
 }
 
 export interface MatrixBreakdown {
-    tenth_pct: CategoryScore
-    twelfth_pct: CategoryScore
-    cgpa: CategoryScore
-    github: CategoryScore
-    coding_platform: CategoryScore
+    academics: CategoryScore
     internship: CategoryScore
-    certifications: CategoryScore
     projects: CategoryScore
+    coding: CategoryScore
     hackathons: CategoryScore
+    certifications: CategoryScore
 }
 
 export interface AnalysisResult {
@@ -91,11 +147,20 @@ export interface AnalysisResult {
     confidenceBand: [number, number]
     atsScore: number
     keywordGaps: string[]
+    resumeSkills: string[]
     matrixScore: number
     matrixBreakdown: MatrixBreakdown
     shapContributions: ShapContribution[]
     actions: Action[]
     processingMs: number
+    platformSummary?: PlatformSummary
+}
+
+export interface PlatformSummary {
+    leetcode: string
+    github: string
+    codeforces: string
+    codechef: string
 }
 
 // ─── API Responses ────────────────────────────────────────────────────────────

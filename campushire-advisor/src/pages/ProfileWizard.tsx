@@ -6,42 +6,73 @@ import { ProgressBar } from '@/components/wizard/ProgressBar'
 import { StepIndicator } from '@/components/wizard/StepIndicator'
 import { FileDropzone } from '@/components/wizard/FileDropzone'
 import { FormInput } from '@/components/ui/FormInput'
-import { Toggle } from '@/components/ui/Toggle'
 import { Button } from '@/components/ui/Button'
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
-import {
-    academicSchema, codingSchema, experienceSchema,
-    type AcademicFormValues, type CodingFormValues, type ExperienceFormValues,
-} from '@/lib/validators'
+import { profileSchema, type ProfileFormValues } from '@/lib/validators'
 import { useSubmitAnalysis } from '@/hooks/useAnalysis'
-import type { WizardFormData, InternshipType } from '@/types'
+import type { WizardFormData } from '@/types'
+import {
+    fetchLeetCodeStats,
+    fetchGithubStats,
+    fetchCodeforcesStats,
+    fetchCodeChefStats,
+    type LeetCodeStats,
+    type GithubStats,
+    type CodeforcesStats,
+    type CodeChefStats,
+} from '@/lib/api-fetchers'
 
-const STEP_LABELS = ['Academic', 'Coding', 'Experience', 'Resume']
+const STEP_LABELS = ['Profile & Usernames', 'Resume']
 const BRANCHES = ['CSE', 'IT', 'ECE', 'ENTC', 'Mechanical', 'Civil', 'Chemical', 'Other']
-const INTERNSHIP_TYPES: { value: InternshipType; label: string }[] = [
-    { value: 'international', label: 'International / Credit Transfer' },
-    { value: 'it_company', label: 'IT Company / Academic Institute' },
-    { value: 'eduskills', label: 'EduSkills' },
-    { value: 'none', label: 'None' },
-]
-
-function InfoNote({ children }: { children: React.ReactNode }) {
-    return (
-        <div className="flex gap-2 bg-slate-50 rounded-xl p-3 text-slate-500 text-xs">
-            <span>ℹ️</span><span>{children}</span>
-        </div>
-    )
-}
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
     return <h2 className="text-lg font-semibold text-slate-800 mb-4">{children}</h2>
 }
 
-function SubSection({ title, children }: { title: string; children: React.ReactNode }) {
+// Platform stat card component
+interface PlatformCard {
+    name: string
+    icon: string
+    color: string
+    items: [string, string | number][]
+    status: 'ok' | 'failed' | 'skipped'
+}
+
+function PlatformCards({ cards }: { cards: PlatformCard[] }) {
     return (
-        <div className="mb-5">
-            <p className="text-sm font-medium text-slate-600 mb-3">{title}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {cards.map((card) => (
+                <div
+                    key={card.name}
+                    className={`rounded-xl border p-4 ${card.status === 'failed' ? 'bg-red-50 border-red-200' :
+                            card.status === 'skipped' ? 'bg-slate-50 border-slate-200 opacity-60' :
+                                card.color
+                        }`}
+                >
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xl">{card.icon}</span>
+                            <span className="font-semibold text-sm text-slate-700">{card.name}</span>
+                        </div>
+                        {card.status === 'ok' && <span className="text-xs bg-emerald-100 text-emerald-700 rounded-full px-2 py-0.5">✓ Fetched</span>}
+                        {card.status === 'failed' && <span className="text-xs bg-red-100 text-red-700 rounded-full px-2 py-0.5">✗ Failed</span>}
+                        {card.status === 'skipped' && <span className="text-xs bg-slate-200 text-slate-500 rounded-full px-2 py-0.5">Skipped</span>}
+                    </div>
+                    {card.status === 'ok' && (
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                            {card.items.map(([label, val]) => (
+                                <div key={label}>
+                                    <div className="text-xs text-slate-400">{label}</div>
+                                    <div className="text-sm font-bold text-slate-800">{val}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {card.status === 'skipped' && (
+                        <p className="text-xs text-slate-400">API unavailable — won't affect prediction</p>
+                    )}
+                </div>
+            ))}
         </div>
     )
 }
@@ -50,188 +81,346 @@ export default function ProfileWizard() {
     const [step, setStep] = useState(1)
     const [resumeFile, setResumeFile] = useState<File | null>(null)
     const [formData, setFormData] = useState<Partial<WizardFormData>>({})
+    const [isVerifying, setIsVerifying] = useState(false)
+    const [verifyStatus, setVerifyStatus] = useState('')
+    const [verifyError, setVerifyError] = useState('')
+    const [platformCards, setPlatformCards] = useState<PlatformCard[]>([])
+
     const submitAnalysis = useSubmitAnalysis()
 
-    // Step 1
-    const step1 = useForm<AcademicFormValues>({ resolver: zodResolver(academicSchema), defaultValues: { cgpaScale: 10, year: 3, backlogs: 0 } })
-    // Step 2
-    const step2 = useForm<CodingFormValues>({ resolver: zodResolver(codingSchema), defaultValues: { lcSubmissions: 0, hrBadges: 0, hrMedHardSolved: 0, githubContributions: 0, githubCollaborations: 0, githubMonthlyActive: false } })
-    // Step 3
-    const step3 = useForm<ExperienceFormValues>({ resolver: zodResolver(experienceSchema), defaultValues: { internshipType: 'none', internshipCount: 0, internshipStipendAbove10k: false, projectsIndustry: 0, projectsDomain: 0, certsGlobal: 0, certsNptel: 0, certsRbu: 0, hackathonFirst: 0, hackathonSecond: 0, hackathonThird: 0, hackathonParticipation: 0 } })
+    const form = useForm<ProfileFormValues>({
+        resolver: zodResolver(profileSchema),
+        defaultValues: { cgpaScale: 10, year: 3, backlogs: 0, codechefUsername: '' }
+    })
 
-    function handleStep1(data: AcademicFormValues) {
-        setFormData((prev) => ({ ...prev, academic: data }))
+    async function handleVerifyAndProceed(data: ProfileFormValues) {
+        setIsVerifying(true)
+        setVerifyError('')
+        setPlatformCards([])
+
+        // ── 1. Fetch LeetCode + GitHub (required) ──────────────────────────────
+        setVerifyStatus('🔍 Fetching LeetCode stats...')
+        const lcData = await fetchLeetCodeStats(data.leetcodeUsername)
+
+        if (!lcData) {
+            setVerifyError(`❌ Could not fetch LeetCode profile for "${data.leetcodeUsername}". Check your username at leetcode.com and try again.`)
+            setIsVerifying(false)
+            setVerifyStatus('')
+            return
+        }
+
+        setVerifyStatus('🔍 Fetching GitHub stats...')
+        const ghData = await fetchGithubStats(data.githubUsername)
+
+        if (!ghData) {
+            setVerifyError(`❌ Could not fetch GitHub profile for "${data.githubUsername}". Check your username at github.com and try again.`)
+            setIsVerifying(false)
+            setVerifyStatus('')
+            return
+        }
+
+        // ── 2. Fetch Codeforces (required) ───────────────────────────────────
+        setVerifyStatus('🔍 Fetching Codeforces stats...')
+        const cfData = await fetchCodeforcesStats(data.codeforcesHandle)
+
+        if (!cfData) {
+            setVerifyError(`❌ Could not fetch Codeforces profile for "${data.codeforcesHandle}". Check your handle at codeforces.com and try again.`)
+            setIsVerifying(false)
+            setVerifyStatus('')
+            return
+        }
+
+        // ── 3. Fetch CodeChef (optional, best-effort) ────────────────────────
+        setVerifyStatus('🔍 Fetching CodeChef stats (optional)...')
+        const ccData: CodeChefStats = data.codechefUsername
+            ? await fetchCodeChefStats(data.codechefUsername)
+            : { username: '', currentRating: 0, stars: '0★', fullySolved: 0, globalRank: 0, skipped: true, reason: 'Not provided' }
+
+        // ── 4. Build platform cards for display ──────────────────────────────
+        const cards: PlatformCard[] = [
+            {
+                name: 'LeetCode',
+                icon: '🟨',
+                color: 'bg-yellow-50 border-yellow-200',
+                status: 'ok',
+                items: [
+                    ['Total Solved', lcData.totalSolved],
+                    ['Easy / Med / Hard', `${lcData.easySolved}/${lcData.mediumSolved}/${lcData.hardSolved}`],
+                    ['Active Days (yr)', lcData.activeDays],
+                    ['Global Rank', lcData.ranking > 0 ? `#${lcData.ranking.toLocaleString()}` : 'N/A'],
+                ],
+            },
+            {
+                name: 'GitHub',
+                icon: '🐙',
+                color: 'bg-slate-50 border-slate-200',
+                status: 'ok',
+                items: [
+                    ['Public Repos', ghData.public_repos],
+                    ['Total Stars', ghData.totalStars],
+                    ['Followers', ghData.followers],
+                ],
+            },
+            {
+                name: 'Codeforces',
+                icon: '🔵',
+                color: 'bg-blue-50 border-blue-200',
+                status: 'ok',
+                items: [
+                    ['Rating', cfData.rating || 'Unrated'],
+                    ['Max Rating', cfData.maxRating || 'N/A'],
+                    ['Rank', cfData.rank],
+                    ['Problems Solved', cfData.solvedCount],
+                ],
+            },
+            {
+                name: 'CodeChef',
+                icon: '👨‍🍳',
+                color: 'bg-orange-50 border-orange-200',
+                status: ccData.skipped ? 'skipped' : 'ok',
+                items: ccData.skipped ? [] : [
+                    ['Rating', ccData.currentRating],
+                    ['Stars', ccData.stars],
+                    ['Solved', ccData.fullySolved],
+                    ['Global Rank', ccData.globalRank ? `#${ccData.globalRank}` : 'N/A'],
+                ],
+            },
+        ]
+        setPlatformCards(cards)
+
+        // ── 5. Map to backend payload ─────────────────────────────────────────
+        const mapped: Partial<WizardFormData> = {
+            academic: {
+                cgpa: data.cgpa,
+                cgpaScale: data.cgpaScale,
+                tenthPct: data.tenthPct,
+                twelfthPct: data.twelfthPct,
+                branch: data.branch,
+                year: data.year,
+                backlogs: data.backlogs,
+            },
+            coding: {
+                // LeetCode — real per-difficulty data
+                lcTotalSolved: lcData.totalSolved,
+                lcEasySolved: lcData.easySolved,
+                lcMediumSolved: lcData.mediumSolved,
+                lcHardSolved: lcData.hardSolved,
+                lcActiveDays: lcData.activeDays,
+                lcRanking: lcData.ranking,
+                // GitHub
+                githubRepos: ghData.public_repos,
+                githubFollowers: ghData.followers,
+                githubStars: ghData.totalStars,
+                // Codeforces
+                cfRating: cfData.rating,
+                cfMaxRating: cfData.maxRating,
+                cfRank: cfData.rank,
+                cfSolved: cfData.solvedCount,
+                // CodeChef (0s if unavailable)
+                ccRating: ccData.skipped ? 0 : (ccData.currentRating || 0),
+                ccStars: ccData.skipped ? '0★' : (ccData.stars || '0★'),
+                ccSolved: ccData.skipped ? 0 : (ccData.fullySolved || 0),
+                ccGlobalRank: ccData.skipped ? 0 : (ccData.globalRank || 0),
+                // Legacy fields (backward compat)
+                lcSubmissions: lcData.totalSolved,
+                hrBadges: 0,
+                hrMedHardSolved: lcData.mediumSolved + lcData.hardSolved,
+                githubContributions: ghData.public_repos * 10,
+                githubCollaborations: ghData.followers,
+                githubMonthlyActive: lcData.activeDays > 30,
+            },
+            experience: {
+                internshipType: 'none',
+                internshipCount: 0,
+                internshipStipendAbove10k: false,
+                projectsIndustry: 0,
+                projectsDomain: ghData.public_repos > 10 ? 3 : ghData.public_repos > 5 ? 2 : 1,
+                certsGlobal: 0,
+                certsNptel: 0,
+                certsRbu: 0,
+                hackathonFirst: 0,
+                hackathonSecond: 0,
+                hackathonThird: 0,
+                hackathonParticipation: 0,
+            },
+        }
+
+        setFormData(mapped)
+        setIsVerifying(false)
+        setVerifyStatus('')
         setStep(2)
     }
-    function handleStep2(data: CodingFormValues) {
-        setFormData((prev) => ({ ...prev, coding: data }))
-        setStep(3)
-    }
-    function handleStep3(data: ExperienceFormValues) {
-        setFormData((prev) => ({ ...prev, experience: data }))
-        setStep(4)
-    }
+
     function handleFinalSubmit() {
         if (!resumeFile) return
         submitAnalysis.mutate({ ...formData, resumeFile } as WizardFormData)
     }
 
-    const numInput = (label: string, name: string, form: ReturnType<typeof useForm<CodingFormValues | ExperienceFormValues>>, placeholder = 'e.g. 0') => (
-        <FormInput
-            label={label}
-            type="number"
-            min={0}
-            placeholder={placeholder}
-            error={(form.formState.errors as Record<string, { message?: string }>)[name]?.message}
-            {...form.register(name as never, { valueAsNumber: true })}
-        />
-    )
-
     return (
         <PageLayout maxWidth="2xl">
-            {submitAnalysis.isPending && <LoadingOverlay />}
+            {(submitAnalysis.isPending || isVerifying) && (
+                <LoadingOverlay message={verifyStatus || 'Analysing your profile with AI...'} />
+            )}
 
             <div className="mb-8">
-                <StepIndicator currentStep={step} totalSteps={4} stepName={STEP_LABELS[step - 1]} />
-                <ProgressBar currentStep={step} totalSteps={4} stepLabels={STEP_LABELS} />
+                <StepIndicator currentStep={step} totalSteps={2} stepName={STEP_LABELS[step - 1]} />
+                <ProgressBar currentStep={step} totalSteps={2} stepLabels={STEP_LABELS} />
             </div>
 
-            {/* ── Step 1: Academic ── */}
+            {/* ─── STEP 1: Academics + Usernames ─── */}
             {step === 1 && (
-                <form onSubmit={step1.handleSubmit(handleStep1)} className="flex flex-col gap-6">
-                    <SectionHeader>Academic Details</SectionHeader>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <FormInput label="CGPA" type="number" step="0.01" placeholder="e.g. 7.8" error={step1.formState.errors.cgpa?.message} {...step1.register('cgpa', { valueAsNumber: true })} />
-                        <div className="flex flex-col gap-1">
-                            <label className="text-sm font-medium text-slate-700">CGPA Scale</label>
-                            <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" {...step1.register('cgpaScale', { valueAsNumber: true })}>
-                                <option value={10}>10.0 scale</option>
-                                <option value={4}>4.0 scale</option>
-                            </select>
+                <form onSubmit={form.handleSubmit(handleVerifyAndProceed)} className="flex flex-col gap-8">
+                    {verifyError && (
+                        <div className="p-4 bg-red-50 text-red-700 rounded-xl border border-red-200 text-sm font-medium">
+                            {verifyError}
                         </div>
-                        <FormInput label="10th Board %" type="number" step="0.01" placeholder="e.g. 85.4" error={step1.formState.errors.tenthPct?.message} {...step1.register('tenthPct', { valueAsNumber: true })} />
-                        <FormInput label="12th Board %" type="number" step="0.01" placeholder="e.g. 78.2" error={step1.formState.errors.twelfthPct?.message} {...step1.register('twelfthPct', { valueAsNumber: true })} />
-                        <div className="flex flex-col gap-1">
-                            <label className="text-sm font-medium text-slate-700">Branch</label>
-                            <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" {...step1.register('branch')}>
-                                <option value="">Select branch</option>
-                                {BRANCHES.map((b) => <option key={b} value={b}>{b}</option>)}
-                            </select>
-                            {step1.formState.errors.branch && <p className="text-xs text-red-500">{step1.formState.errors.branch.message}</p>}
+                    )}
+
+                    {/* Academic Details */}
+                    <div>
+                        <SectionHeader>Academic Details</SectionHeader>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <FormInput label="CGPA" type="number" step="0.01" placeholder="e.g. 7.8"
+                                error={form.formState.errors.cgpa?.message}
+                                {...form.register('cgpa', { valueAsNumber: true })} />
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">CGPA Scale</label>
+                                <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    {...form.register('cgpaScale', { valueAsNumber: true })}>
+                                    <option value={10}>10.0 scale</option>
+                                    <option value={4}>4.0 scale</option>
+                                </select>
+                            </div>
+                            <FormInput label="10th Board %" type="number" step="0.01" placeholder="e.g. 85.4"
+                                error={form.formState.errors.tenthPct?.message}
+                                {...form.register('tenthPct', { valueAsNumber: true })} />
+                            <FormInput label="12th Board %" type="number" step="0.01" placeholder="e.g. 78.2"
+                                error={form.formState.errors.twelfthPct?.message}
+                                {...form.register('twelfthPct', { valueAsNumber: true })} />
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">Branch</label>
+                                <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    {...form.register('branch')}>
+                                    <option value="">Select branch</option>
+                                    {BRANCHES.map((b) => <option key={b} value={b}>{b}</option>)}
+                                </select>
+                                {form.formState.errors.branch && (
+                                    <p className="text-xs text-red-500">{form.formState.errors.branch.message}</p>
+                                )}
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">Year</label>
+                                <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    {...form.register('year', { valueAsNumber: true })}>
+                                    {[1, 2, 3, 4].map((y) => <option key={y} value={y}>Year {y}</option>)}
+                                </select>
+                            </div>
+                            <FormInput label="Active Backlogs" type="number" min={0} placeholder="e.g. 0"
+                                error={form.formState.errors.backlogs?.message}
+                                {...form.register('backlogs', { valueAsNumber: true })} />
                         </div>
-                        <div className="flex flex-col gap-1">
-                            <label className="text-sm font-medium text-slate-700">Year</label>
-                            <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" {...step1.register('year', { valueAsNumber: true })}>
-                                {[1, 2, 3, 4].map((y) => <option key={y} value={y}>Year {y}</option>)}
-                            </select>
-                        </div>
-                        <FormInput label="Active Backlogs" type="number" min={0} placeholder="e.g. 0" error={step1.formState.errors.backlogs?.message} {...step1.register('backlogs', { valueAsNumber: true })} />
                     </div>
-                    <div className="flex justify-end mt-4">
-                        <Button type="submit">Next →</Button>
+
+                    {/* Coding Profiles */}
+                    <div>
+                        <SectionHeader>Coding Platform Usernames</SectionHeader>
+                        <p className="text-sm text-slate-500 mb-1">
+                            We fetch your <span className="font-semibold text-slate-700">real stats</span> directly from each platform API — problems solved per difficulty, active days, ratings, and more.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                            {/* Required */}
+                            <FormInput
+                                label="LeetCode Username *"
+                                placeholder="e.g. tanmayygupta"
+                                error={form.formState.errors.leetcodeUsername?.message}
+                                {...form.register('leetcodeUsername')}
+                            />
+                            <FormInput
+                                label="GitHub Username *"
+                                placeholder="e.g. octocat"
+                                error={form.formState.errors.githubUsername?.message}
+                                {...form.register('githubUsername')}
+                            />
+                            <FormInput
+                                label="Codeforces Handle *"
+                                placeholder="e.g. tourist"
+                                error={form.formState.errors.codeforcesHandle?.message}
+                                {...form.register('codeforcesHandle')}
+                            />
+                            {/* Optional */}
+                            <FormInput
+                                label="CodeChef Username (optional)"
+                                placeholder="e.g. coder_123"
+                                error={form.formState.errors.codechefUsername?.message}
+                                {...form.register('codechefUsername')}
+                            />
+                        </div>
+
+                        {/* Info box */}
+                        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-700">
+                                <p className="font-semibold mb-1">📊 What we fetch:</p>
+                                <ul className="space-y-0.5">
+                                    <li>🟨 LeetCode: solved per difficulty, active days, ranking</li>
+                                    <li>🐙 GitHub: repos, stars, followers</li>
+                                    <li>🔵 Codeforces: rating, rank, problems solved</li>
+                                    <li>👨‍🍳 CodeChef: rating, stars (if API is up)</li>
+                                </ul>
+                            </div>
+                            <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">
+                                <p className="font-semibold mb-1">⚠️ Note on CodeChef:</p>
+                                <p>CodeChef does not have a stable free API. We try our best to fetch your data, but it may show as unavailable. Your Codeforces rating is the primary competitive programming signal.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                        <Button type="submit">Verify & Fetch Stats →</Button>
                     </div>
                 </form>
             )}
 
-            {/* ── Step 2: Coding ── */}
+            {/* ─── STEP 2: Platform Stats + Resume ─── */}
             {step === 2 && (
-                <form onSubmit={step2.handleSubmit(handleStep2)} className="flex flex-col gap-6">
-                    <SectionHeader>Coding & GitHub Activity</SectionHeader>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <FormInput label="LeetCode Submissions (total)" type="number" min={0} placeholder="e.g. 120" error={step2.formState.errors.lcSubmissions?.message} {...step2.register('lcSubmissions', { valueAsNumber: true })} />
-                        <FormInput label="HackerRank/HackerEarth Badges" type="number" min={0} placeholder="e.g. 3" error={step2.formState.errors.hrBadges?.message} {...step2.register('hrBadges', { valueAsNumber: true })} />
-                        <FormInput label="Med/Hard Questions Solved (HR/HE)" type="number" min={0} placeholder="e.g. 15" error={step2.formState.errors.hrMedHardSolved?.message} {...step2.register('hrMedHardSolved', { valueAsNumber: true })} />
-                        <FormInput label="GitHub Contributions (last 1 year)" type="number" min={0} placeholder="e.g. 45" error={step2.formState.errors.githubContributions?.message} {...step2.register('githubContributions', { valueAsNumber: true })} />
-                        <FormInput label="GitHub Collaborations" type="number" min={0} placeholder="e.g. 2" error={step2.formState.errors.githubCollaborations?.message} {...step2.register('githubCollaborations', { valueAsNumber: true })} />
-                    </div>
-                    <Toggle
-                        label="Monthly GitHub activity (≥1 commit/month for 6 months)?"
-                        checked={step2.watch('githubMonthlyActive')}
-                        onChange={(v) => step2.setValue('githubMonthlyActive', v)}
-                    />
-                    <InfoNote>Self-reported — we don't verify handles in V1. Please enter accurate values.</InfoNote>
-                    <div className="flex justify-between mt-4">
-                        <Button variant="outline" type="button" onClick={() => setStep(1)}>← Back</Button>
-                        <Button type="submit">Next →</Button>
-                    </div>
-                </form>
-            )}
-
-            {/* ── Step 3: Experience ── */}
-            {step === 3 && (
-                <form onSubmit={step3.handleSubmit(handleStep3)} className="flex flex-col gap-6">
-                    <SectionHeader>Internships, Projects & Achievements</SectionHeader>
-
-                    <SubSection title="Internships">
-                        <div className="flex flex-col gap-1 sm:col-span-2">
-                            <label className="text-sm font-medium text-slate-700">Internship Type</label>
-                            <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" {...step3.register('internshipType')}>
-                                {INTERNSHIP_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                            </select>
-                        </div>
-                        <FormInput label="Count" type="number" min={0} placeholder="e.g. 1" error={step3.formState.errors.internshipCount?.message} {...step3.register('internshipCount', { valueAsNumber: true })} />
-                        <div className="flex items-end pb-1">
-                            <Toggle label="Stipend ≥ ₹10,000/month?" checked={step3.watch('internshipStipendAbove10k')} onChange={(v) => step3.setValue('internshipStipendAbove10k', v)} />
-                        </div>
-                    </SubSection>
-
-                    <SubSection title="Projects">
-                        <FormInput label="Industry/SIH/GOI Projects" type="number" min={0} placeholder="e.g. 1" error={step3.formState.errors.projectsIndustry?.message} {...step3.register('projectsIndustry', { valueAsNumber: true })} />
-                        <FormInput label="Domain-Specific Projects" type="number" min={0} placeholder="e.g. 2" error={step3.formState.errors.projectsDomain?.message} {...step3.register('projectsDomain', { valueAsNumber: true })} />
-                    </SubSection>
-
-                    <SubSection title="Certifications">
-                        <FormInput label="Global Certs (AWS/Azure/GCP etc.)" type="number" min={0} {...step3.register('certsGlobal', { valueAsNumber: true })} />
-                        <FormInput label="NPTEL Courses (max 2 counted)" type="number" min={0} max={2} {...step3.register('certsNptel', { valueAsNumber: true })} />
-                        <FormInput label="RBU Online Courses (max 2 counted)" type="number" min={0} max={2} {...step3.register('certsRbu', { valueAsNumber: true })} />
-                    </SubSection>
-
-                    <SubSection title="Hackathons & Competitions">
-                        <FormInput label="1st Prize Wins" type="number" min={0} {...step3.register('hackathonFirst', { valueAsNumber: true })} />
-                        <FormInput label="2nd Prize Wins" type="number" min={0} {...step3.register('hackathonSecond', { valueAsNumber: true })} />
-                        <FormInput label="3rd / Consolation" type="number" min={0} {...step3.register('hackathonThird', { valueAsNumber: true })} />
-                        <FormInput label="Participations" type="number" min={0} {...step3.register('hackathonParticipation', { valueAsNumber: true })} />
-                    </SubSection>
-
-                    <div className="flex justify-between mt-4">
-                        <Button variant="outline" type="button" onClick={() => setStep(2)}>← Back</Button>
-                        <Button type="submit">Next →</Button>
-                    </div>
-                </form>
-            )}
-
-            {/* ── Step 4: Resume ── */}
-            {step === 4 && (
                 <div className="flex flex-col gap-6">
-                    <SectionHeader>Upload Your Resume</SectionHeader>
-                    <FileDropzone
-                        file={resumeFile}
-                        onFileChange={setResumeFile}
-                        error={submitAnalysis.isError ? "We couldn't extract text from this PDF. Please try a different file." : undefined}
-                    />
-                    <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-500">
-                        <p className="font-medium text-slate-700 mb-1">What we store</p>
-                        <ul className="list-disc ml-4 space-y-1 text-xs">
-                            <li>Your resume text is parsed and immediately deleted — we never store the PDF.</li>
-                            <li>Only anonymised feature scores are saved for model improvement.</li>
-                            <li>Your name and email are stored separately and encrypted.</li>
-                        </ul>
+                    {/* Fetched platform stats display */}
+                    {platformCards.length > 0 && (
+                        <div>
+                            <SectionHeader>✅ Live Platform Stats Fetched</SectionHeader>
+                            <p className="text-sm text-slate-500 mb-3">
+                                These real numbers power your AI analysis. Gemini will use all of this data to generate your personalised placement prediction.
+                            </p>
+                            <PlatformCards cards={platformCards} />
+                        </div>
+                    )}
+
+                    {/* Resume upload */}
+                    <div>
+                        <SectionHeader>Upload Your Resume (PDF)</SectionHeader>
+                        <FileDropzone
+                            file={resumeFile}
+                            onFileChange={setResumeFile}
+                            error={submitAnalysis.isError ? 'Submission failed. Please try again.' : undefined}
+                        />
+                        <div className="mt-3 p-4 bg-indigo-50 rounded-xl border border-indigo-100 text-sm">
+                            <p className="font-semibold text-indigo-800 mb-1">🤖 What happens next:</p>
+                            <ul className="text-indigo-700 text-xs space-y-1">
+                                <li>• Your resume text is extracted and matched against 80+ ATS keywords across 9 categories</li>
+                                <li>• Gemini AI reads your entire profile + resume to generate a personalised probability</li>
+                                <li>• Recommendations are specific to YOUR actual numbers — not generic advice</li>
+                            </ul>
+                        </div>
                     </div>
-                    <div className="flex justify-between mt-4">
-                        <Button variant="outline" type="button" onClick={() => setStep(3)}>← Back</Button>
+
+                    <div className="flex justify-between">
+                        <Button variant="outline" onClick={() => setStep(1)}>← Back</Button>
                         <Button
                             onClick={handleFinalSubmit}
                             disabled={!resumeFile || submitAnalysis.isPending}
-                            isLoading={submitAnalysis.isPending}
                         >
-                            Analyse My Profile 🚀
+                            {submitAnalysis.isPending ? 'Analysing with AI...' : 'Analyse My Profile 🚀'}
                         </Button>
                     </div>
-                    {submitAnalysis.isError && (
-                        <p className="text-sm text-red-500 text-center">
-                            Submission failed. Please check your connection and try again.
-                        </p>
-                    )}
                 </div>
             )}
         </PageLayout>

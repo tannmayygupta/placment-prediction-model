@@ -40,9 +40,7 @@ export default function Login() {
 
                 {loginError && (
                     <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">
-                        {(loginError as { response?: { status?: number } }).response?.status === 429
-                            ? 'Too many attempts. Please wait 1 minute.'
-                            : 'Incorrect email or password.'}
+                        {(loginError as any).response?.data?.detail || (loginError as Error).message || 'Login failed. Please check credentials.'}
                     </p>
                 )}
 
