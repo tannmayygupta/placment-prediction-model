@@ -163,53 +163,102 @@ def _call_gemini(
         profile, matrix_score, ats_score, resume_text, resume_skills
     )
 
-    prompt = f"""You are an expert placement analyst for engineering students in India.
-Analyse this student's profile and generate a realistic, data-driven placement prediction.
+    # Pre-compute personalised strengths and weaknesses to inject into prompt
+    lc_active = profile.coding.lcActiveDays
+    lc_total = profile.coding.lcTotalSolved
+    lc_hard = profile.coding.lcHardSolved
+    gh_contrib = profile.coding.githubContributions
+    gh_repos = profile.coding.githubRepos
+    cf_rating = profile.coding.cfRating
+    cgpa_norm2 = profile.academic.cgpa * (10.0 / profile.academic.cgpaScale)
+
+    strengths = []
+    weaknesses = []
+
+    if lc_total >= 300: strengths.append(f"Strong LeetCode: {lc_total} problems solved (top tier)")
+    elif lc_total >= 150: strengths.append(f"Decent LeetCode: {lc_total} solved")
+    else: weaknesses.append(f"Low LeetCode count: {lc_total} solved — needs 150+ for tier-1 companies")
+
+    if lc_hard >= 30: strengths.append(f"Hard problems: {lc_hard} solved — strong DSA depth")
+    elif lc_hard < 10: weaknesses.append(f"Only {lc_hard} hard problems — most tier-1 expect 20+")
+
+    if lc_active >= 100: strengths.append(f"Excellent consistency: {lc_active} active LC days/year")
+    elif lc_active >= 50: strengths.append(f"Good streak: {lc_active} LC active days")
+    else: weaknesses.append(f"Low consistency: only {lc_active} active LeetCode days — aim for 100+")
+
+    if gh_contrib >= 300: strengths.append(f"Highly active GitHub: {gh_contrib} contributions/year")
+    elif gh_contrib >= 100: strengths.append(f"Active GitHub: {gh_contrib} contributions/year")
+    elif gh_contrib > 0: weaknesses.append(f"Low GitHub activity: {gh_contrib} contributions/year — recruiters check this")
+    else: weaknesses.append("No GitHub contributions tracked — ensure profile is public")
+
+    if gh_repos >= 10: strengths.append(f"{gh_repos} public repos — good portfolio")
+    elif gh_repos < 5: weaknesses.append(f"Only {gh_repos} public repos — build more visible projects")
+
+    if cf_rating >= 1600: strengths.append(f"Codeforces Expert ({cf_rating}) — competitive programming strength")
+    elif cf_rating >= 1200: weaknesses.append(f"CF rating {cf_rating} — below Expert (1600) preferred by tier-1")
+    elif cf_rating == 0: weaknesses.append("No Codeforces rating — competitive programming absent")
+
+    if cgpa_norm2 >= 8.5: strengths.append(f"Excellent CGPA {cgpa_norm2:.2f}/10")
+    elif cgpa_norm2 < 6.5: weaknesses.append(f"CGPA {cgpa_norm2:.2f}/10 below most cutoffs (7.0+)")
+
+    if ats_score >= 70: strengths.append(f"Strong resume (ATS: {ats_score:.0f}/100)")
+    elif ats_score < 50: weaknesses.append(f"Weak resume (ATS: {ats_score:.0f}/100) — needs keyword & format improvements")
+
+    strengths_text = "\n".join(f"  + {s}" for s in strengths) or "  (none identified)"
+    weaknesses_text = "\n".join(f"  - {w}" for w in weaknesses) or "  (none identified)"
+
+    prompt = f"""You are an expert placement analyst for Indian engineering campus placements.
 
 {profile_context}
 
-IMPORTANT INSTRUCTIONS:
-1. The placement probability should reflect REAL industry standards for Indian campus placements.
-2. Base your analysis on the ACTUAL numbers provided — do NOT use placeholders or generic advice.
-3. If LeetCode problems solved is 320, acknowledge 320 — don't say "solve 100 more".
-4. Each recommendation must be SPECIFIC to this student's data.
-5. The probability should be calibrated: 70-85% for strong profiles, 40-65% for average, <40% for weak.
+=== PERSONALISED ANALYSIS (use these EXACT numbers in your response) ===
+STRENGTHS this student already has — DO NOT recommend improving these:
+{strengths_text}
 
-Respond with ONLY valid JSON (no markdown, no code blocks) in exactly this format:
+WEAKNESSES that need work — FOCUS all action_items on these:
+{weaknesses_text}
+
+=== NON-NEGOTIABLE RULES ===
+1. NEVER recommend something already listed as a STRENGTH.
+2. EVERY action_item rationale MUST quote the student's EXACT current number and a specific target.
+3. Zero tolerance for generic phrases like "solve more problems", "be consistent", "build projects" without numbers.
+4. If LeetCode active days >= 100, do NOT say anything about improving consistency.
+5. If GitHub contributions >= 300, do NOT say anything about being more active on GitHub.
+
+Respond with ONLY valid JSON (no markdown, no code blocks):
 {{
-  "probability": <float 0-100>,
-  "confidence_lower": <float>,
-  "confidence_upper": <float>,
-  "reasoning": "<2-3 sentence summary of why this probability>",
+  "probability": <float, calibrated: 78-90 strong, 55-74 average, 35-54 below-average, <35 weak>,
+  "confidence_lower": <probability minus 8>,
+  "confidence_upper": <probability plus 8>,
+  "reasoning": "<2-3 sentences quoting EXACT values: CGPA, LC total, LC active days, CF rating, GitHub contributions>",
   "platform_summary": {{
-    "leetcode": "<specific assessment based on actual numbers>",
-    "github": "<specific assessment>",
-    "codeforces": "<specific assessment>",
-    "codechef": "<specific assessment>"
+    "leetcode": "Solved {lc_total} ({lc_hard} hard), {lc_active} active days — <honest 1-line verdict>",
+    "github": "{gh_repos} repos, {gh_contrib} contributions/yr — <honest 1-line verdict>",
+    "codeforces": "Rating {cf_rating} ({profile.coding.cfRank}) — <honest 1-line verdict>",
+    "codechef": "<rating and verdict, or 'Not provided'>"
   }},
   "feature_contributions": [
-    {{"feature": "CGPA ({profile.academic.cgpa}/{profile.academic.cgpaScale})", "value": <cgpa_normalized>, "contribution": <-0.2 to 0.2>, "impact": "positive|negative|neutral"}},
-    {{"feature": "LeetCode ({profile.coding.lcTotalSolved} solved, {profile.coding.lcActiveDays} active days)", "value": {profile.coding.lcTotalSolved}, "contribution": <float>, "impact": "positive|negative|neutral"}},
-    {{"feature": "LeetCode Hard Problems ({profile.coding.lcHardSolved})", "value": {profile.coding.lcHardSolved}, "contribution": <float>, "impact": "positive|negative|neutral"}},
-    {{"feature": "GitHub ({profile.coding.githubRepos} repos, {profile.coding.githubStars} stars)", "value": {profile.coding.githubRepos}, "contribution": <float>, "impact": "positive|negative|neutral"}},
-    {{"feature": "Codeforces Rating ({profile.coding.cfRating})", "value": {profile.coding.cfRating}, "contribution": <float>, "impact": "positive|negative|neutral"}},
-    {{"feature": "ATS Resume Score", "value": {ats_score}, "contribution": <float>, "impact": "positive|negative|neutral"}},
+    {{"feature": "CGPA ({profile.academic.cgpa}/{profile.academic.cgpaScale})", "value": {round(cgpa_norm2, 2)}, "contribution": <-0.2 to 0.2>, "impact": "positive|negative|neutral"}},
+    {{"feature": "LeetCode Total ({lc_total} solved)", "value": {lc_total}, "contribution": <float>, "impact": "positive|negative|neutral"}},
+    {{"feature": "LeetCode Active Days ({lc_active})", "value": {lc_active}, "contribution": <float>, "impact": "positive|negative|neutral"}},
+    {{"feature": "LeetCode Hard ({lc_hard})", "value": {lc_hard}, "contribution": <float>, "impact": "positive|negative|neutral"}},
+    {{"feature": "GitHub Contributions ({gh_contrib}/yr)", "value": {gh_contrib}, "contribution": <float>, "impact": "positive|negative|neutral"}},
+    {{"feature": "Codeforces Rating ({cf_rating})", "value": {cf_rating}, "contribution": <float>, "impact": "positive|negative|neutral"}},
+    {{"feature": "ATS Resume ({ats_score:.0f}/100)", "value": {round(ats_score, 1)}, "contribution": <float>, "impact": "positive|negative|neutral"}},
     {{"feature": "Backlogs ({profile.academic.backlogs})", "value": {profile.academic.backlogs}, "contribution": <float>, "impact": "positive|negative|neutral"}},
-    {{"feature": "Internship", "value": {profile.experience.internshipCount}, "contribution": <float>, "impact": "positive|negative|neutral"}}
+    {{"feature": "Internships ({profile.experience.internshipCount})", "value": {profile.experience.internshipCount}, "contribution": <float>, "impact": "positive|negative|neutral"}}
   ],
   "action_items": [
     {{
       "priority": 1,
-      "action": "<specific, actionable improvement>",
-      "rationale": "<WHY this helps, with specific numbers from their profile>",
-      "category": "<Academic|Coding|Resume|Experience|Certifications|Hackathons>"
+      "action": "<specific action with a measurable target number>",
+      "rationale": "Your current [exact metric name] is [exact value from their profile]. [Specific reason this matters for placements]. Target: [specific measurable goal].",
+      "category": "<Coding|Resume|Experience|Academic|Certifications|Hackathons>"
     }}
   ]
 }}
 
-Generate 4-6 action_items. They MUST be personalized — reference actual numbers from the profile. 
-DO NOT give generic advice like "solve more problems" if they already have 300+ solved.
-DO NOT recommend things they've already clearly done well."""
+Generate exactly 5 action_items. Each must be 100% personalised — quote exact numbers. Focus ONLY on weaknesses."""
 
     try:
         from google import genai as google_genai
@@ -217,8 +266,8 @@ DO NOT recommend things they've already clearly done well."""
             model='gemini-1.5-flash',
             contents=prompt,
             config=google_genai.types.GenerateContentConfig(
-                temperature=0.3,
-                max_output_tokens=2048,
+                temperature=0.15,
+                max_output_tokens=2500,
             ),
         )
         raw = response.text.strip()

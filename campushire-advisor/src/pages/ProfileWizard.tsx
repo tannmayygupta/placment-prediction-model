@@ -154,6 +154,8 @@ export default function ProfileWizard() {
                 status: 'ok',
                 items: [
                     ['Public Repos', ghData.public_repos],
+                    ['Yearly Contributions', ghData.yearlyContributions || 0],
+                    ['Recent Commits (90d)', ghData.recentCommits || 0],
                     ['Total Stars', ghData.totalStars],
                     ['Followers', ghData.followers],
                 ],
