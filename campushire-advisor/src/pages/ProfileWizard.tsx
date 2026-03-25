@@ -11,6 +11,7 @@ import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 import { profileSchema, type ProfileFormValues } from '@/lib/validators'
 import { useSubmitAnalysis } from '@/hooks/useAnalysis'
 import type { WizardFormData } from '@/types'
+import type { InternshipType } from '@/types'
 import {
     fetchLeetCodeStats,
     fetchGithubStats,
@@ -19,14 +20,25 @@ import {
     type CodeChefStats,
 } from '@/lib/api-fetchers'
 
-const STEP_LABELS = ['Profile & Usernames', 'Resume']
+// ── FIX 1: Type declarations must be OUTSIDE the component function ──────────
+type LOREntry = {
+    source_type: 'industry' | 'academic_strong' | 'academic_standard'
+    institution: string
+}
+
+type CertEntry = {
+    event_name: string
+    prize_level: 'first' | 'second' | 'third' | 'participation'
+}
+// ────────────────────────────────────────────────────────────────────────────
+
+const STEP_LABELS = ['Profile & Usernames', 'Experience & Extras', 'Resume']
 const BRANCHES = ['CSE', 'IT', 'ECE', 'ENTC', 'Mechanical', 'Civil', 'Chemical', 'Other']
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
     return <h2 className="text-lg font-semibold text-slate-800 mb-4">{children}</h2>
 }
 
-// Platform stat card component
 interface PlatformCard {
     name: string
     icon: string
@@ -83,6 +95,25 @@ export default function ProfileWizard() {
     const [verifyError, setVerifyError] = useState('')
     const [platformCards, setPlatformCards] = useState<PlatformCard[]>([])
 
+    // ── Step 2 state ──────────────────────────────────────────────────────────
+    
+    const [internshipType, setInternshipType] = useState<InternshipType>('none')
+    const [internshipCount, setInternshipCount] = useState<number>(0)
+    const [stipendAbove10k, setStipendAbove10k] = useState<boolean>(false)
+    const [projectsIndustry, setProjectsIndustry] = useState<number>(0)
+    const [projectsDomain, setProjectsDomain] = useState<number>(0)
+    const [certsGlobal, setCertsGlobal] = useState<number>(0)
+    const [certsNptel, setCertsNptel] = useState<number>(0)
+    const [certsRbu, setCertsRbu] = useState<number>(0)
+    const [hackathonFirst, setHackathonFirst] = useState<number>(0)
+    const [hackathonSecond, setHackathonSecond] = useState<number>(0)
+    const [hackathonThird, setHackathonThird] = useState<number>(0)
+    const [hackathonParticipation, setHackathonParticipation] = useState<number>(0)
+    // ── FIX 2: useState uses the module-level types, NOT inline type declarations
+    const [lors, setLors] = useState<LOREntry[]>([])
+    const [hackathonCerts, setHackathonCerts] = useState<CertEntry[]>([])
+    // ─────────────────────────────────────────────────────────────────────────
+
     const submitAnalysis = useSubmitAnalysis()
 
     const form = useForm<ProfileFormValues>({
@@ -95,7 +126,6 @@ export default function ProfileWizard() {
         setVerifyError('')
         setPlatformCards([])
 
-        // ── 1. Fetch LeetCode + GitHub (required) ──────────────────────────────
         setVerifyStatus('🔍 Fetching LeetCode stats...')
         const lcData = await fetchLeetCodeStats(data.leetcodeUsername)
 
@@ -116,7 +146,6 @@ export default function ProfileWizard() {
             return
         }
 
-        // ── 2. Fetch Codeforces (required) ───────────────────────────────────
         setVerifyStatus('🔍 Fetching Codeforces stats...')
         const cfData = await fetchCodeforcesStats(data.codeforcesHandle)
 
@@ -127,13 +156,11 @@ export default function ProfileWizard() {
             return
         }
 
-        // ── 3. Fetch CodeChef (optional, best-effort) ────────────────────────
         setVerifyStatus('🔍 Fetching CodeChef stats (optional)...')
         const ccData: CodeChefStats = data.codechefUsername
             ? await fetchCodeChefStats(data.codechefUsername)
             : { username: '', currentRating: 0, stars: '0★', fullySolved: 0, globalRank: 0, skipped: true, reason: 'Not provided' }
 
-        // ── 4. Build platform cards for display ──────────────────────────────
         const cards: PlatformCard[] = [
             {
                 name: 'LeetCode',
@@ -187,7 +214,7 @@ export default function ProfileWizard() {
         ]
         setPlatformCards(cards)
 
-        // ── 5. Map to backend payload ─────────────────────────────────────────
+        // ── FIX 3: experience block removed from here — set in handleExperienceNext
         const mapped: Partial<WizardFormData> = {
             academic: {
                 cgpa: data.cgpa,
@@ -199,50 +226,31 @@ export default function ProfileWizard() {
                 backlogs: data.backlogs,
             },
             coding: {
-                // LeetCode — real per-difficulty data
                 lcTotalSolved: lcData.totalSolved,
                 lcEasySolved: lcData.easySolved,
                 lcMediumSolved: lcData.mediumSolved,
                 lcHardSolved: lcData.hardSolved,
                 lcActiveDays: lcData.activeDays,
                 lcRanking: lcData.ranking,
-                // GitHub
                 githubRepos: ghData.public_repos,
                 githubFollowers: ghData.followers,
                 githubStars: ghData.totalStars,
                 githubYearlyContributions: ghData.yearlyContributions,
                 githubRecentCommits: ghData.recentCommits,
-                // Codeforces
                 cfRating: cfData.rating,
                 cfMaxRating: cfData.maxRating,
                 cfRank: cfData.rank,
                 cfSolved: cfData.solvedCount,
-                // CodeChef (0s if unavailable)
                 ccRating: ccData.skipped ? 0 : (ccData.currentRating || 0),
                 ccStars: ccData.skipped ? '0★' : (ccData.stars || '0★'),
                 ccSolved: ccData.skipped ? 0 : (ccData.fullySolved || 0),
                 ccGlobalRank: ccData.skipped ? 0 : (ccData.globalRank || 0),
-                // Legacy fields (backward compat with scorer)
                 lcSubmissions: lcData.totalSolved,
                 hrBadges: 0,
                 hrMedHardSolved: lcData.mediumSolved + lcData.hardSolved,
-                githubContributions: ghData.yearlyContributions,  // real data now
+                githubContributions: ghData.yearlyContributions,
                 githubCollaborations: ghData.followers,
                 githubMonthlyActive: ghData.yearlyContributions > 50 || lcData.activeDays > 30,
-            },
-            experience: {
-                internshipType: 'none',
-                internshipCount: 0,
-                internshipStipendAbove10k: false,
-                projectsIndustry: 0,
-                projectsDomain: ghData.public_repos > 10 ? 3 : ghData.public_repos > 5 ? 2 : 1,
-                certsGlobal: 0,
-                certsNptel: 0,
-                certsRbu: 0,
-                hackathonFirst: 0,
-                hackathonSecond: 0,
-                hackathonThird: 0,
-                hackathonParticipation: 0,
             },
         }
 
@@ -252,8 +260,67 @@ export default function ProfileWizard() {
         setStep(2)
     }
 
-    function handleFinalSubmit() {
+    function handleExperienceNext() {
+        setFormData(prev => ({
+            ...prev,
+            experience: {
+                internshipType,
+                internshipCount,
+                internshipStipendAbove10k: stipendAbove10k,
+                projectsIndustry,
+                projectsDomain:
+                    projectsDomain > 0
+                        ? projectsDomain
+                        : (prev.coding?.githubRepos ?? 0) > 10
+                            ? 3
+                            : (prev.coding?.githubRepos ?? 0) > 5
+                                ? 2
+                                : 1,
+                certsGlobal,
+                certsNptel,
+                certsRbu,
+                hackathonFirst,
+                hackathonSecond,
+                hackathonThird,
+                hackathonParticipation,
+            },
+            // ── FIX 4: lors and hackathonCerts removed — not part of WizardFormData.
+            // handleFinalSubmit reads them directly from component state instead.
+        }))
+        setStep(3)
+    }
+
+    async function handleFinalSubmit() {
         if (!resumeFile) return
+
+        // POST LOR entries — reads directly from component state (not formData)
+        for (const lor of lors) {
+            try {
+                await fetch('/api/v1/extras/lors', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(lor),
+                })
+            } catch {
+                // non-fatal
+            }
+        }
+
+        // POST hackathon cert entries
+        for (const cert of hackathonCerts) {
+            try {
+                await fetch('/api/v1/extras/hackathon-certs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(cert),
+                })
+            } catch {
+                // non-fatal
+            }
+        }
+
         submitAnalysis.mutate({ ...formData, resumeFile } as WizardFormData)
     }
 
@@ -264,8 +331,8 @@ export default function ProfileWizard() {
             )}
 
             <div className="mb-8">
-                <StepIndicator currentStep={step} totalSteps={2} stepName={STEP_LABELS[step - 1]} />
-                <ProgressBar currentStep={step} totalSteps={2} stepLabels={STEP_LABELS} />
+                <StepIndicator currentStep={step} totalSteps={3} stepName={STEP_LABELS[step - 1]} />
+                <ProgressBar currentStep={step} totalSteps={3} stepLabels={STEP_LABELS} />
             </div>
 
             {/* ─── STEP 1: Academics + Usernames ─── */}
@@ -329,7 +396,6 @@ export default function ProfileWizard() {
                             We fetch your <span className="font-semibold text-slate-700">real stats</span> directly from each platform API — problems solved per difficulty, active days, ratings, and more.
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                            {/* Required */}
                             <FormInput
                                 label="LeetCode Username *"
                                 placeholder="e.g. tanmayygupta"
@@ -348,7 +414,6 @@ export default function ProfileWizard() {
                                 error={form.formState.errors.codeforcesHandle?.message}
                                 {...form.register('codeforcesHandle')}
                             />
-                            {/* Optional */}
                             <FormInput
                                 label="CodeChef Username (optional)"
                                 placeholder="e.g. coder_123"
@@ -357,7 +422,6 @@ export default function ProfileWizard() {
                             />
                         </div>
 
-                        {/* Info box */}
                         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-700">
                                 <p className="font-semibold mb-1">📊 What we fetch:</p>
@@ -381,10 +445,245 @@ export default function ProfileWizard() {
                 </form>
             )}
 
-            {/* ─── STEP 2: Platform Stats + Resume ─── */}
+            {/* ─── STEP 2: Experience & Extras ─── */}
             {step === 2 && (
+                <div className="flex flex-col gap-8">
+
+                    {/* Internship */}
+                    <div>
+                        <SectionHeader>Internship Experience</SectionHeader>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">Internship Type</label>
+                                <select
+                                    className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={internshipType}
+                                   onChange={e => setInternshipType(e.target.value as InternshipType)}
+                                >
+                                    <option value="none">No internship</option>
+                                    <option value="international">International internship</option>
+                                    <option value="it_company">IT company / Reputed institute</option>
+                                    <option value="eduskills">EduSkills</option>
+                                </select>
+                            </div>
+
+                            {internshipType !== 'none' && (
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-sm font-medium text-slate-700">Number of Internships</label>
+                                    <input
+                                        type="number" min={0} max={10}
+                                        className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        value={internshipCount}
+                                        onChange={e => setInternshipCount(Number(e.target.value))}
+                                    />
+                                </div>
+                            )}
+
+                            {internshipType !== 'none' && (
+                                <div className="flex items-center gap-3 col-span-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                    <input
+                                        type="checkbox" id="stipend"
+                                        className="w-4 h-4 accent-indigo-600"
+                                        checked={stipendAbove10k}
+                                        onChange={e => setStipendAbove10k(e.target.checked)}
+                                    />
+                                    <label htmlFor="stipend" className="text-sm text-slate-700">
+                                        Total stipend received was ₹10,000 or more
+                                    </label>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Projects */}
+                    <div>
+                        <SectionHeader>Projects</SectionHeader>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">Industry / SIH / GOI projects</label>
+                                <input type="number" min={0}
+                                    className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={projectsIndustry}
+                                    onChange={e => setProjectsIndustry(Number(e.target.value))}
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">Domain-specific projects</label>
+                                <input type="number" min={0}
+                                    className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={projectsDomain}
+                                    onChange={e => setProjectsDomain(Number(e.target.value))}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Certifications */}
+                    <div>
+                        <SectionHeader>Certifications</SectionHeader>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">Global certs (AWS / Azure / GCP…)</label>
+                                <input type="number" min={0}
+                                    className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={certsGlobal}
+                                    onChange={e => setCertsGlobal(Number(e.target.value))}
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">NPTEL courses</label>
+                                <input type="number" min={0} max={2}
+                                    className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={certsNptel}
+                                    onChange={e => setCertsNptel(Number(e.target.value))}
+                                />
+                                <p className="text-xs text-slate-400">Max 2 counted</p>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">RBU online courses</label>
+                                <input type="number" min={0} max={2}
+                                    className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={certsRbu}
+                                    onChange={e => setCertsRbu(Number(e.target.value))}
+                                />
+                                <p className="text-xs text-slate-400">Max 2 counted</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Hackathons */}
+                    <div>
+                        <SectionHeader>Hackathons & Competitions</SectionHeader>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            {(
+                                [
+                                    { label: '1st prize wins', value: hackathonFirst, set: setHackathonFirst },
+                                    { label: '2nd prize wins', value: hackathonSecond, set: setHackathonSecond },
+                                    { label: '3rd / consolation', value: hackathonThird, set: setHackathonThird },
+                                    { label: 'Participations', value: hackathonParticipation, set: setHackathonParticipation },
+                                ] as { label: string; value: number; set: (n: number) => void }[]
+                            ).map(({ label, value, set }) => (
+                                <div key={label} className="flex flex-col gap-1">
+                                    <label className="text-sm font-medium text-slate-700">{label}</label>
+                                    <input type="number" min={0}
+                                        className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        value={value}
+                                        onChange={e => set(Number(e.target.value))}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Hackathon cert detail rows */}
+                        <div className="mt-4">
+                            <p className="text-sm text-slate-500 mb-2">
+                                Optionally list your hackathon results for a more detailed score breakdown:
+                            </p>
+                            {hackathonCerts.map((cert, i) => (
+                                <div key={i} className="grid grid-cols-2 gap-3 mb-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                    <input
+                                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                        placeholder="Event name e.g. SIH 2025"
+                                        value={cert.event_name}
+                                        onChange={e => {
+                                            const updated = [...hackathonCerts]
+                                            updated[i] = { ...updated[i], event_name: e.target.value }
+                                            setHackathonCerts(updated)
+                                        }}
+                                    />
+                                    <select
+                                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                        value={cert.prize_level}
+                                        onChange={e => {
+                                            const updated = [...hackathonCerts]
+                                            updated[i] = { ...updated[i], prize_level: e.target.value as CertEntry['prize_level'] }
+                                            setHackathonCerts(updated)
+                                        }}
+                                    >
+                                        <option value="first">1st prize</option>
+                                        <option value="second">2nd prize</option>
+                                        <option value="third">3rd / consolation</option>
+                                        <option value="participation">Participation</option>
+                                    </select>
+                                    <button
+                                        type="button"
+                                        className="text-xs text-red-500 col-span-2 text-left"
+                                        onClick={() => setHackathonCerts(hackathonCerts.filter((_, j) => j !== i))}
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            ))}
+                            <button
+                                type="button"
+                                className="text-sm text-indigo-600 font-medium hover:text-indigo-800"
+                                onClick={() => setHackathonCerts([...hackathonCerts, { event_name: '', prize_level: 'participation' }])}
+                            >
+                                + Add a hackathon result
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* LOR */}
+                    <div>
+                        <SectionHeader>Letters of Recommendation</SectionHeader>
+                        <p className="text-sm text-slate-500 mb-3">Optional — adds a meaningful boost, especially from industry mentors.</p>
+                        {lors.map((lor, i) => (
+                            <div key={i} className="grid grid-cols-2 gap-3 mb-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                <select
+                                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                    value={lor.source_type}
+                                    onChange={e => {
+                                        const updated = [...lors]
+                                        updated[i] = { ...updated[i], source_type: e.target.value as LOREntry['source_type'] }
+                                        setLors(updated)
+                                    }}
+                                >
+                                    <option value="industry">Industry mentor</option>
+                                    <option value="academic_strong">Academic — strong dept.</option>
+                                    <option value="academic_standard">Academic — standard</option>
+                                </select>
+                                <input
+                                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                    placeholder="Institution (optional)"
+                                    value={lor.institution}
+                                    onChange={e => {
+                                        const updated = [...lors]
+                                        updated[i] = { ...updated[i], institution: e.target.value }
+                                        setLors(updated)
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    className="text-xs text-red-500 col-span-2 text-left"
+                                    onClick={() => setLors(lors.filter((_, j) => j !== i))}
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        ))}
+                        {lors.length < 3 && (
+                            <button
+                                type="button"
+                                className="text-sm text-indigo-600 font-medium hover:text-indigo-800"
+                                onClick={() => setLors([...lors, { source_type: 'academic_standard', institution: '' }])}
+                            >
+                                + Add a letter of recommendation
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Navigation */}
+                    <div className="flex justify-between">
+                        <Button variant="outline" onClick={() => setStep(1)}>← Back</Button>
+                        <Button onClick={handleExperienceNext}>Next — Upload Resume →</Button>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── STEP 3: Platform Stats + Resume ─── */}
+            {step === 3 && (
                 <div className="flex flex-col gap-6">
-                    {/* Fetched platform stats display */}
                     {platformCards.length > 0 && (
                         <div>
                             <SectionHeader>✅ Live Platform Stats Fetched</SectionHeader>
@@ -395,7 +694,6 @@ export default function ProfileWizard() {
                         </div>
                     )}
 
-                    {/* Resume upload */}
                     <div>
                         <SectionHeader>Upload Your Resume (PDF)</SectionHeader>
                         <FileDropzone
@@ -414,7 +712,7 @@ export default function ProfileWizard() {
                     </div>
 
                     <div className="flex justify-between">
-                        <Button variant="outline" onClick={() => setStep(1)}>← Back</Button>
+                        <Button variant="outline" onClick={() => setStep(2)}>← Back</Button>
                         <Button
                             onClick={handleFinalSubmit}
                             disabled={!resumeFile || submitAnalysis.isPending}

@@ -1,5 +1,7 @@
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
+# ── Input schemas ──────────────────────────────────────────────────────────────
 
 class AcademicDetails(BaseModel):
     cgpa: float
@@ -9,6 +11,7 @@ class AcademicDetails(BaseModel):
     branch: str
     year: int
     backlogs: int
+
 
 class CodingDetails(BaseModel):
     # LeetCode
@@ -23,8 +26,8 @@ class CodingDetails(BaseModel):
     githubRepos: int = 0
     githubFollowers: int = 0
     githubStars: int = 0
-    githubYearlyContributions: int = 0   # all GitHub activity in past 365 days
-    githubRecentCommits: int = 0         # commits pushed in last ~90 days
+    githubYearlyContributions: int = 0
+    githubRecentCommits: int = 0
 
     # CodeChef
     ccRating: int = 0
@@ -39,11 +42,11 @@ class CodingDetails(BaseModel):
     cfSolved: int = 0
 
     # Legacy fields (backward compat with scorer.py)
-    lcSubmissions: int = 0        # = lcTotalSolved
+    lcSubmissions: int = 0
     hrBadges: int = 0
-    hrMedHardSolved: int = 0     # = lcMediumSolved + lcHardSolved
-    githubContributions: int = 0  # = githubRepos * 10
-    githubCollaborations: int = 0 # = githubFollowers
+    hrMedHardSolved: int = 0
+    githubContributions: int = 0
+    githubCollaborations: int = 0
     githubMonthlyActive: bool = False
 
     def model_post_init(self, __context):
@@ -52,7 +55,6 @@ class CodingDetails(BaseModel):
             self.lcSubmissions = self.lcTotalSolved
         if self.hrMedHardSolved == 0:
             self.hrMedHardSolved = self.lcMediumSolved + self.lcHardSolved
-        # Use real yearly contributions; fallback to repos*10 proxy if unavailable
         if self.githubContributions == 0:
             if self.githubYearlyContributions > 0:
                 self.githubContributions = self.githubYearlyContributions
@@ -65,6 +67,7 @@ class CodingDetails(BaseModel):
                 self.githubYearlyContributions > 50
                 or self.lcActiveDays > 30
             )
+
 
 class ExperienceDetails(BaseModel):
     internshipType: str = "none"
@@ -80,15 +83,20 @@ class ExperienceDetails(BaseModel):
     hackathonThird: int = 0
     hackathonParticipation: int = 0
 
+
 class ProfileSubmissionRequest(BaseModel):
-    """The incoming form payload matching React frontend state (WizardFormData)."""
+    """Incoming form payload — matches React WizardFormData shape."""
     academic: AcademicDetails
     coding: CodingDetails
     experience: ExperienceDetails
 
+
+# ── Output / breakdown schemas ─────────────────────────────────────────────────
+
 class MatrixCategoryBreakdown(BaseModel):
     score: float
     maxScore: float
+
 
 class MatrixBreakdown(BaseModel):
     academics: MatrixCategoryBreakdown
@@ -98,10 +106,12 @@ class MatrixBreakdown(BaseModel):
     hackathons: MatrixCategoryBreakdown
     certifications: MatrixCategoryBreakdown
 
+
 class ShapContribution(BaseModel):
     feature: str
     value: float
     contribution: float = 0.0
+
 
 class ActionItem(BaseModel):
     priority: int
@@ -109,8 +119,8 @@ class ActionItem(BaseModel):
     rationale: str
     category: str
 
+
 class ResumeInsights(BaseModel):
-    """AI-extracted insights from resume text."""
     skills: List[str] = []
     experience_summary: str = ""
     project_highlights: List[str] = []
@@ -118,16 +128,29 @@ class ResumeInsights(BaseModel):
     strengths: List[str] = []
     weaknesses: List[str] = []
 
+
 class AnalysisResponse(BaseModel):
+    # Core result
     submissionId: str
     probability: float
-    confidenceBand: list[float]  # [lower, upper]
-    atsScore: float
-    keywordGaps: list[str]
-    resumeSkills: list[str] = []
+    confidenceBand: List[float]          # [lower, upper]
     matrixScore: float
     matrixBreakdown: MatrixBreakdown
-    shapContributions: list[ShapContribution]
-    actions: list[ActionItem]
+
+    # ATS
+    atsScore: float
+    keywordGaps: List[str]
+    resumeSkills: List[str] = []
+
+    # Explainability
+    shapContributions: List[ShapContribution]
+    actions: List[ActionItem]
+
+    # Meta
     processingMs: int
     platformSummary: dict = {}
+
+    # Extra scorer fields — Optional so GET and what-if responses work without them
+    base_probability: Optional[float] = None
+    adjustment_breakdown: Optional[dict] = None
+    extra_score: Optional[float] = None

@@ -4,6 +4,7 @@ import { ProbabilityCard } from '@/components/results/ProbabilityCard'
 import { MatrixScoreCard } from '@/components/results/MatrixScoreCard'
 import { ATSScoreCard } from '@/components/results/ATSScoreCard'
 import { ActionPlanCard } from '@/components/results/ActionPlanCard'
+import { AdjustmentCard } from '@/components/results/AdjustmentCard'   // ← NEW
 import { Button } from '@/components/ui/Button'
 import { ResultsSkeleton } from '@/components/ui/SkeletonCard'
 import { useAnalysisResult } from '@/hooks/useAnalysis'
@@ -36,6 +37,12 @@ export default function Results() {
 
     const lowConfidence = data.confidenceBand[1] - data.confidenceBand[0] > 20
 
+    // AdjustmentCard only shows when the backend returned boost data
+    const hasBoost =
+        data.baseProbability != null &&
+        data.adjustmentBreakdown !== null &&
+        Object.keys(data.adjustmentBreakdown ?? {}).length > 0
+
     return (
         <PageLayout>
             {/* Header */}
@@ -65,6 +72,7 @@ export default function Results() {
 
             {/* Results grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
                 {/* Left column */}
                 <div className="flex flex-col gap-6">
                     <ProbabilityCard
@@ -75,11 +83,24 @@ export default function Results() {
                         matrixScore={data.matrixScore}
                         matrixBreakdown={data.matrixBreakdown}
                     />
+
+                    {/* AdjustmentCard: only renders when experience boosted the score */}
+                    {hasBoost && (
+                        <AdjustmentCard
+                            baseProbability={data.baseProbability!}
+                            finalProbability={data.probability}
+                            adjustmentBreakdown={data.adjustmentBreakdown!}
+                        />
+                    )}
                 </div>
 
                 {/* Right column */}
                 <div className="flex flex-col gap-6">
-                    <ATSScoreCard atsScore={data.atsScore} keywordGaps={data.keywordGaps} resumeSkills={data.resumeSkills} />
+                    <ATSScoreCard
+                        atsScore={data.atsScore}
+                        keywordGaps={data.keywordGaps}
+                        resumeSkills={data.resumeSkills}
+                    />
                     <ActionPlanCard
                         actions={data.actions}
                         shapContributions={data.shapContributions}

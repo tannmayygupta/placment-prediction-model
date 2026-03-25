@@ -90,3 +90,26 @@ class Submission(Base):
     
     user = relationship("User", back_populates="submissions")
     profile = relationship("StudentProfile", back_populates="submissions")
+
+class LOR(Base):
+    __tablename__ = "lors"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    profile_id = Column(String, ForeignKey("student_profiles.id", ondelete="CASCADE"), nullable=False)
+
+    source_type = Column(String, nullable=False)
+    institution = Column(String, nullable=True)
+    verified = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class HackathonCert(Base):
+    __tablename__ = "hackathon_certs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    profile_id = Column(String, ForeignKey("student_profiles.id", ondelete="CASCADE"), nullable=False)
+
+    event_name = Column(String, nullable=False)
+    prize_level = Column(String, nullable=True)
+    verified = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

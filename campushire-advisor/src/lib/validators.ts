@@ -46,3 +46,27 @@ export const loginSchema = z.object({
 
 export type RegisterFormValues = z.infer<typeof registerSchema>
 export type LoginFormValues = z.infer<typeof loginSchema>
+
+
+// ─── NEW: LOR Schema ─────────────────────────────────────────
+export const lorSchema = z.object({
+  source_type: z.enum(['industry', 'academic_strong', 'academic_standard']),
+  institution: z.string().optional(),
+})
+
+// ─── NEW: Hackathon Certificate Schema ───────────────────────
+export const hackathonCertSchema = z.object({
+  event_name: z.string().min(2, 'Enter the event name'),
+  prize_level: z.enum(['first', 'second', 'third', 'participation']),
+})
+
+// ─── NEW: Step 3b Schema ─────────────────────────────────────
+export const step3bSchema = z.object({
+  lors: z.array(lorSchema).max(3),
+  hackathon_certs: z.array(hackathonCertSchema).max(10),
+})
+
+// ─── Types (IMPORTANT for TS) ─────────────────────────────────
+export type Lor = z.infer<typeof lorSchema>
+export type HackathonCert = z.infer<typeof hackathonCertSchema>
+export type Step3bFormValues = z.infer<typeof step3bSchema>

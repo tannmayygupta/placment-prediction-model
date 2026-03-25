@@ -3,6 +3,8 @@ from typing import Any, Union
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from app.core.config import settings
+from fastapi import Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -37,3 +39,20 @@ def decode_access_token(token: str) -> str | None:
     except JWTError:
         # Token is invalid or expired
         return None
+    
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    user_id = decode_access_token(token)
+
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # For now return minimal user object
+    class User:
+        def __init__(self, id):
+            self.id = id
+            self.profile_id = id   # TEMP (you can fix later)
+
+    return User(user_id)

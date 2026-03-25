@@ -1,5 +1,16 @@
-import type { MatrixBreakdown } from '@/types'
+// src/components/results/MatrixScoreCard.tsx
+
 import { CategoryRow } from './CategoryRow'
+
+// ✅ SINGLE SOURCE OF TRUTH (exported so hook can use it)
+export interface MatrixBreakdown {
+    academics: { earned: number; max: number }
+    internship: { earned: number; max: number }
+    projects: { earned: number; max: number }
+    coding: { earned: number; max: number }
+    hackathons: { earned: number; max: number }
+    certifications: { earned: number; max: number }
+}
 
 const CATEGORY_LABELS: { key: keyof MatrixBreakdown; label: string }[] = [
     { key: 'academics', label: 'Academics (CGPA / Board %)' },
@@ -18,6 +29,7 @@ interface MatrixScoreCardProps {
 export function MatrixScoreCard({ matrixScore, matrixBreakdown }: MatrixScoreCardProps) {
     return (
         <div className="bg-white rounded-2xl border border-slate-100 p-6">
+            {/* Header */}
             <div className="flex justify-between items-baseline mb-5">
                 <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">
                     RBU Placement Matrix
@@ -28,13 +40,14 @@ export function MatrixScoreCard({ matrixScore, matrixBreakdown }: MatrixScoreCar
                 </span>
             </div>
 
+            {/* Category rows */}
             <div className="flex flex-col gap-3">
                 {CATEGORY_LABELS.map(({ key, label }) => (
                     <CategoryRow
                         key={key}
                         label={label}
-                        earned={matrixBreakdown[key].score}
-                        max={matrixBreakdown[key].maxScore}
+                        earned={matrixBreakdown[key].earned}
+                        max={matrixBreakdown[key].max}
                     />
                 ))}
             </div>
